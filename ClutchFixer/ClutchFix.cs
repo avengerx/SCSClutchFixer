@@ -17,7 +17,8 @@ public class ClutchFix
   private bool dirsMade = false;
 
   // https://modding.scssoft.com/wiki/Documentation/Engine/Units/accessory_engine_data
-  private const string defaultTorqueCurve = @"$2torque_curve[]: (300, 0)
+  private const string defaultTorqueCurve = @"
+$2torque_curve[]: (300, 0)
 $2torque_curve[]: (310, 0.45)
 $2torque_curve[]: (440, 0.6)
 $2torque_curve[]: (1000, 1)
@@ -63,7 +64,7 @@ $2torque_curve[]: (2600, 0)";
     // it doesn't play a role in the engine in low gears/rpm.
     if (!contents.Contains("torque_curve[]:"))
     {
-      contents = Regex.Replace(contents, @"((\n[\t ]*)volume:[\t ]*[0-9]+(\.[0-9]+){0,1}\n)", "$1" + defaultTorqueCurve + "\n\n");
+      contents = Regex.Replace(contents, @"(\n([\t ]*)volume:[\t ]*[0-9]+(\.[0-9]+){0,1}\n)", "$1" + defaultTorqueCurve + "\n\n");
     }
     else
     {
