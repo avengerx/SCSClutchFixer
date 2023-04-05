@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "ClutchFixer": {
+      "commandName": "Project",
+      "workingDirectory": "$(SolutionDir)"
+    }
+  }
+}
