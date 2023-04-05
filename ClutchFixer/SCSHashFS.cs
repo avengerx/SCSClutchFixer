@@ -1,4 +1,4 @@
-﻿using Ionic.Zlib;
+﻿using System.IO.Compression;
 using System.Text;
 
 namespace ClutchFixer;
@@ -157,7 +157,7 @@ internal class SCSHashFS : IDisposable
     using var fileStream = new FileStream(outputPath, FileMode.Create);
     if (entry.IsCompressed)
     {
-      var zlibStream = new ZlibStream(reader.BaseStream, CompressionMode.Decompress);
+      var zlibStream = new ZLibStream(reader.BaseStream, CompressionMode.Decompress);
       zlibStream.CopyTo(fileStream, (int)entry.CompressedSize);
     }
     else
@@ -219,8 +219,16 @@ internal class SCSHashFS : IDisposable
     byte[] file;
     if (entry.IsCompressed)
     {
-      file = reader.ReadBytes((int)entry.CompressedSize);
-      file = ZlibStream.UncompressBuffer(file);
+      var zippedstream = new MemoryStream(reader.ReadBytes((int)entry.CompressedSize));
+      var unzip = new ZLibStream(zippedstream, CompressionMode.Decompress);
+
+      var buf = new byte[16384];
+      int chunkId;
+      var ostream = new MemoryStream();
+      while ((chunkId = unzip.Read(buf, 0, buf.Length)) != 0)
+        ostream.Write(buf, 0, chunkId);
+
+      file = ostream.ToArray();
     }
     else
     {

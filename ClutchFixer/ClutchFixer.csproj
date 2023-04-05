@@ -7,8 +7,4 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
-  <ItemGroup>
-    <PackageReference Include="Ionic.Zlib" Version="1.9.1.5" />
-  </ItemGroup>
-
 </Project>
