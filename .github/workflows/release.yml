@@ -1,0 +1,65 @@
+on:
+  workflow_dispatch:  
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build:
+    permissions:
+      contents: write
+
+    name: Build
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: Build
+        shell: bash
+        run: for i in 86 64; do dotnet publish -p:PublishProfile=Deployx$i; done
+
+      - name: Zip x86 & x64 console app builds
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          echo "::group::7-zip into zip and xz, 32 & 64-bit"
+          for arch in 86 64; do
+            for fmt in zip exe.xz; do
+              {
+                cd "build_x${arch}"
+                7z a -bd -bt -mx=9 ../"ClutchFixer_x${arch}.${fmt}" "ClutchFixer.exe"
+              } &
+            done
+          done
+          wait
+          echo "::endgroup::"
+
+      - name: Make the release and uploads built bin packages
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ClutchFixer_x86.zip
+            ClutchFixer_x64.zip
+            ClutchFixer_x86.exe.xz
+            ClutchFixer_x64.exe.xz
+
+      - name: Upload x86 binary as artifact
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: ClutchFix-x86
+          path: build_x86/*.exe
+          if-no-files-found: error
+
+      - name: Upload x86_64 binary as artifact
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/upload-artifact@v3
+        with:
+          name: ClutchFix-x64
+          path: build_x64/*.exe
+          if-no-files-found: error
