@@ -17,6 +17,9 @@ public class ClutchFix
   private bool dirsMade = false;
 
   // https://modding.scssoft.com/wiki/Documentation/Engine/Units/accessory_engine_data
+  // Gives the 300rpm a torque value of 0.4 to drastically improve
+  // the clutch functionality. This means truck would have 40% strength
+  // until it gets its "cut rpm" to stall, or just recover ahead.
   private const string defaultTorqueCurve = @"
 $2torque_curve[]: (300, 0)
 $2torque_curve[]: (310, 0.45)
@@ -28,6 +31,8 @@ $2torque_curve[]: (2400, 0.4)
 $2torque_curve[]: (2600, 0)";
 
   private HashSet<string> dlcs = new();
+
+  private Regex torque_re = new Regex(@"((\n[\t ]*torque_curve\[[\t ]*\]:[\t ]*\()[0-9]+ *, *0(?:.0)? *\))", RegexOptions.Compiled | RegexOptions.Singleline);
 
   public ClutchFix(string gameName, string gameInstallPath)
   {
@@ -64,11 +69,13 @@ $2torque_curve[]: (2600, 0)";
     // it doesn't play a role in the engine in low gears/rpm.
     if (!contents.Contains("torque_curve[]:"))
     {
-      contents = Regex.Replace(contents, @"(\n([\t ]*)volume:[\t ]*[0-9]+(\.[0-9]+){0,1}\n)", "$1" + defaultTorqueCurve + "\n\n");
+      contents = Regex.Replace(contents, @"(\n([\t ]*)volume:[\t ]*[0-9]+(\.[0-9]+){0,1}\n)", "${1}" + defaultTorqueCurve + "\n\n");
     }
     else
     {
-      contents = Regex.Replace(contents, @"((\n[\t ]*)torque_curve\[[\t ]*\]:[\t ]*\([456][0-9]{2},)", "$2torque_curve[]: (310, 0.45)$1");
+      // Gives the first torque entry a strength of 0.4 (40%), see
+      // defaultTorqueCurve above.
+      contents = torque_re.Replace(contents, "${1}${2}310, 0.45)", 1);
     }
 
     if (!dirsMade) makeDirs();
@@ -103,7 +110,7 @@ This mod is based in ""Engine Idle Torque 'Fix'"" mod for ATS, but applied to al
 
 Clutch deadzone-range should be reduced in options for additional realism (smaller actuation/""bite"" interval in the pedal).
 
-The process to generate this mod is automatic by a console app (.NET 6) that I'll probably host at https://github.com/avengerx/ClutchFix.
+The process to generate this mod is automated by a console app (.NET 6) that is hosted at https://github.com/avengerx/SCSClutchFixer.
 
 Generated for game version: [white]" + exactVer + @"[normal]
 Truck engines fixed: [white]" + engineCount + @"[normal]
