@@ -120,7 +120,7 @@ Generation Date: [white]" + todayISO + "[normal]";
 {
 mod_package : .package_name
 {
-  package_version: ""v1.0.0""
+  package_version: ""v1.1.0""
   display_name: ""Clutch Fix""
   author: ""Heavenly Avenger""
   category[]: ""truck""
