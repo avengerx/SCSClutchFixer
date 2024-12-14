@@ -110,7 +110,7 @@ This mod is based in ""Engine Idle Torque 'Fix'"" mod for ATS, but applied to al
 
 Clutch deadzone-range should be reduced in options for additional realism (smaller actuation/""bite"" interval in the pedal).
 
-The process to generate this mod is automated by a console app (.NET 6) that is hosted at https://github.com/avengerx/SCSClutchFixer.
+The process to generate this mod is automated by a console app (.NET 9) that is hosted at https://github.com/avengerx/SCSClutchFixer.
 
 Generated for game version: [white]" + exactVer + @"[normal]
 Truck engines fixed: [white]" + engineCount + @"[normal]
