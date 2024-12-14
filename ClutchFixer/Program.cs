@@ -1,7 +1,5 @@
 ﻿using ClutchFixer;
 using Microsoft.Win32;
-using System.Reflection.Metadata;
-using System.Runtime.InteropServices;
 using System.Text;
 
 const string trucksPath = "def/vehicle/truck";
@@ -108,13 +106,12 @@ foreach (var appId in new uint[] { atsAppId, ets2AppId })
           {
             var baseFile = Path.GetFileName(file).ToLowerInvariant();
 
-            if (baseFile == "base.scs" || baseFile == "def.scs" || baseFile.StartsWith("dlc_"))
+            if (baseFile == "base.scs" || baseFile == "base_share.scs" || baseFile == "base_vehicle.scs" || baseFile == "def.scs" || baseFile.StartsWith("dlc_"))
             {
-              var scspak = SCSHashFS.Open(file); // fixme
+              var scspak = SCSHashFS.Open(file);
 
               Console.WriteLine("SCS Pack file: " + file + Environment.NewLine + 
                 "  Contained files: " + scspak.EntryCount);
-
               var truckEngineFiles = new List<string>();
 
               if (baseFile.StartsWith("dlc_")) dlcName = Path.GetFileNameWithoutExtension(baseFile);

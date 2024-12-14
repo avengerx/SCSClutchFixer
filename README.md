@@ -56,8 +56,8 @@ feature applied to ETS2 and all ATS engines.
 
 ### This program's
 
-The code to actually decode SCS files comes from sk-zk/TruckLib project, and
-several parts, especially `CityHash` class was reworked to include only
+The code to actually decode SCS files comes from sk-zk/TruckLib.HashFs project,
+and several parts, especially `CityHash` class was reworked to include only
 the minimally necessary code for this program's ends.
 
 ### The mod itself

@@ -1,4 +1,5 @@
 ﻿using System.IO.Compression;
+using System.Runtime.InteropServices;
 using System.Text;
 
 namespace ClutchFixer;
@@ -7,13 +8,13 @@ internal class SCSHashFS : IDisposable
 {
   public string Path { get; private set; }
   public int EntryCount => entries.Count;
+  public ushort Version { get; private set; }
 
   private const uint Magic = 0x23534353; // as ascii: "SCS#"
-  private const ushort SupportedVersion = 1;
   private const string SupportedHashMethod = "CITY";
   private const string RootPath = "/";
 
-  private const string dirMarker = "*";
+  private string dirMarker { get; set; }
 
   private BinaryReader reader;
 
@@ -33,33 +34,124 @@ internal class SCSHashFS : IDisposable
     if (magic != Magic)
       throw new InvalidDataException("Probably not a HashFS file.");
 
-    ushort version = reader.ReadUInt16();
-    if (version != SupportedVersion)
-      throw new NotSupportedException($"Version {version} is not supported.");
+    Version = reader.ReadUInt16();
+    if (Version != 1 && Version != 2)
+      throw new NotSupportedException("Version " + Version + " is not supported.");
+
+    dirMarker = Version == 1 ? "*" : "/";
 
     Salt = reader.ReadUInt16();
 
     HashMethod = new string(reader.ReadChars(4));
     if (HashMethod != SupportedHashMethod)
-      throw new NotSupportedException($"Hash method \"{HashMethod}\" is not supported.");
+      throw new NotSupportedException("Hash method \"" + HashMethod + "\" is not supported.");
 
     EntriesCount = reader.ReadUInt32();
-    StartOffset = reader.ReadUInt32();
+    Console.WriteLine("Opening: " + scsPackPath + "\n Version: " + Version + "\n Salt: " + Salt + "\n HashMethod: " + HashMethod + "\n Identifier: " + magic + "\n");
 
-    reader.BaseStream.Position = StartOffset;
-
-    for (int i = 0; i < EntriesCount; i++)
+    if (Version == 1)
     {
-      var entry = new HashFSEntry
+      StartOffset = reader.ReadUInt32();
+
+      // In some circumstances it may be desired to read entries at end of file and ignore
+      // the StartOffset data; thus:
+      // reader.BaseStream.Position = Reader.BaseStream.Length - (entriesCount * 32)
+      // (this is forceEntryuTableAtEnd in parent project)
+      reader.BaseStream.Position = StartOffset;
+
+      for (int i = 0; i < EntriesCount; i++)
       {
-        Hash = reader.ReadUInt64(),
-        Offset = reader.ReadUInt64(),
-        Flags = new HashFSFlagField(reader.ReadUInt32()),
-        Crc = reader.ReadUInt32(),
-        Size = reader.ReadUInt32(),
-        CompressedSize = reader.ReadUInt32()
-      };
-      entries.Add(entry.Hash, entry);
+        var entry = new HashFSEntry
+        {
+          Hash = reader.ReadUInt64(),
+          Offset = reader.ReadUInt64()
+        };
+        var flags = new HashFSFlagField(reader.ReadUInt32());
+        entry.IsDirectory = flags[0];
+        entry.IsCompressed = flags[1];
+        reader.BaseStream.Position += 4;
+        entry.Size = reader.ReadUInt32();
+        entry.CompressedSize = reader.ReadUInt32();
+        entries.Add(entry.Hash, entry);
+      }
+    }
+    else if (Version == 2)
+    {
+      var entryTableLength = reader.ReadUInt32();
+      if (entryTableLength > int.MaxValue) throw new Exception("Unsupported size for entry table length (" + entryTableLength + ", not representable by int).");
+      var metadataEntriesCount = reader.ReadUInt32(); // we use it?
+      var metadataTableLength = reader.ReadUInt32(); // we use it?
+      if (metadataTableLength > int.MaxValue) throw new Exception("Unsupported size for metadata table length (" + metadataTableLength + ", not representable by int).");
+      var entryTableOffset = (long)reader.ReadUInt64();
+      var metadataTableOffset = (long)reader.ReadUInt64(); // we use it?
+
+      reader.BaseStream.Position = entryTableOffset;
+      var compressedStream = new MemoryStream(reader.ReadBytes((int)entryTableLength));
+      var zlibStream = new ZLibStream(compressedStream, CompressionMode.Decompress);
+      var uncompressedStream = new MemoryStream();
+      zlibStream.CopyTo(uncompressedStream);
+      compressedStream.Dispose();
+      zlibStream.Dispose();
+      var entryTable = MemoryMarshal.Cast<byte, SCSEntry>(uncompressedStream.ToArray()).ToArray();
+      uncompressedStream.Dispose();
+
+      if (entryTable.Length != EntriesCount) throw new Exception("Entry table provides " + entryTable.Length + " records while header claims " + EntriesCount + ".");
+
+      // Get from metadata table what is a regular file or directory
+      reader.BaseStream.Position = metadataTableOffset; // probably could just += 14
+      compressedStream = new MemoryStream(reader.ReadBytes((int)metadataTableLength));
+      zlibStream = new ZLibStream(compressedStream, CompressionMode.Decompress);
+      uncompressedStream = new MemoryStream();
+      zlibStream.CopyTo(uncompressedStream);
+      compressedStream.Dispose();
+      zlibStream.Dispose();
+      var metadataReader = new BinaryReader(uncompressedStream);
+      metadataReader.BaseStream.Position = 0;
+
+      var metadataEntries = new Dictionary<uint, HashFSEntry>();
+      const ulong blockSize = 16UL;
+      HashFSEntry metadataEntry;
+      while (metadataReader.BaseStream.Position < metadataReader.BaseStream.Length)
+      {
+        var idxAndType = metadataReader.ReadUInt32();
+        var metadataIdx = idxAndType & 0x00ffffff;
+        var entryType = idxAndType >> 24;
+        var entryIsDir = entryType == 129;
+
+        if (entryType == 1)
+        {
+          metadataReader.BaseStream.Position += 20; // Skip image metadata
+        }
+        else if (!entryIsDir && entryType != 128)
+        {
+          throw new Exception("Unsupported entry type id " + entryType + ". We need to know the entry type record size in order to advance to the next record.");
+        }
+
+        var compressionData = metadataReader.ReadUInt32();
+        var sizeValue = metadataReader.ReadUInt64();
+
+        if (sizeValue > UInt32.MaxValue) throw new Exception("File size exceeds 4TB limit addressable by our data structure. Metadata entries read so far: " + metadataEntries.Count);
+
+        metadataEntry = new HashFSEntry()
+        {
+          CompressedSize = (compressionData & 0x0fffffff),
+          Size = (uint)sizeValue,
+          IsDirectory = entryIsDir,
+          IsCompressed = (compressionData >> 28) != 0
+        };
+        metadataEntry.Offset = metadataReader.ReadUInt32() * blockSize;
+        metadataEntries.Add(metadataIdx, metadataEntry);
+      }
+      metadataReader.Dispose();
+      uncompressedStream.Dispose();
+
+      if (metadataEntries.Count != entryTable.Length) throw new Exception("Entry table doesn't map to metadata table.");
+      foreach (var scsEntry in entryTable)
+      {
+        var entry = metadataEntries[scsEntry.MetadataIdx + scsEntry.MetadataCount];
+        entry.Hash = scsEntry.Hash;
+        entries.Add(entry.Hash, entry);
+      }
     }
   }
 
@@ -163,7 +255,7 @@ internal class SCSHashFS : IDisposable
     else
     {
       var buffer = new byte[(int)entry.Size];
-      reader.BaseStream.Read(buffer, 0, (int)entry.Size);
+      reader.BaseStream.ReadExactly(buffer, 0, (int)entry.Size);
       fileStream.Write(buffer, 0, (int)entry.Size);
     }
   }
@@ -172,15 +264,34 @@ internal class SCSHashFS : IDisposable
   {
     bool isDir;
 
-    var dirEntries = Encoding.ASCII.GetString(GetEntryContent(rootDirectory)).Split("\n");
+    var dirData = GetEntryContent(rootDirectory);
+    string[] dirEntries;
+    if (Version == 1)
+      dirEntries = Encoding.ASCII.GetString(dirData).Split("\n");
+    else
+    {
+      var dirDataMemStream = new MemoryStream(dirData);
+      var reader = new BinaryReader(dirDataMemStream);
+      reader.BaseStream.Position = 0;
+      var entryCount = reader.ReadUInt32();
+      dirEntries = new string[entryCount];
+      reader.BaseStream.Position += entryCount; // skip the strlen array straight to the name strings
+      for (int i = 0; i < entryCount; i++)
+      {
+        // The length of each string is a byte following the first, entry count plus the position of the file.
+        dirEntries[i] = new string(reader.ReadChars(dirData[4 + i]));
+      }
+      reader.Dispose();
+      dirDataMemStream.Dispose();
+    }
 
     var result = new List<string>();
 
     for (int i = 0; i < dirEntries.Length; i++)
     {
       isDir = dirEntries[i].StartsWith(dirMarker);
-      if ((isDir && (fileType & HashFSEntry.EntryType.Directory) != 0) ||
-          (!isDir && (fileType & HashFSEntry.EntryType.File) != 0))
+      if ((isDir && fileType == HashFSEntry.EntryType.Directory) ||
+          (!isDir && fileType == HashFSEntry.EntryType.File))
         result.Add(isDir ? dirEntries[i][1..] + "/" : dirEntries[i]);
     }
 

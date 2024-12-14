@@ -25,13 +25,6 @@ public struct HashFSEntry
   /// </summary>
   public ulong Offset { get; internal set; }
 
-  internal HashFSFlagField Flags { get; set; }
-
-  /// <summary>
-  /// CRC32 checksum of the file.
-  /// </summary>
-  public uint Crc { get; internal set; }
-
   /// <summary>
   /// Size of the file when uncompressed.
   /// </summary>
@@ -45,11 +38,7 @@ public struct HashFSEntry
   /// <summary>
   /// If true, the entry is a directory listing.
   /// </summary>
-  public bool IsDirectory => Flags[0];
+  public bool IsDirectory { get; set; }
 
-  public bool IsCompressed => Flags[1];
-
-  public bool Verify => Flags[2]; // TODO: What is this?
-
-  public bool IsEncrypted => Flags[3];
+  public bool IsCompressed { get; set; }
 }
